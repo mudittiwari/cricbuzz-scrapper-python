@@ -1,16 +1,40 @@
-import requests
-from bs4 import BeautifulSoup
-from classes.MatchCard import MatchCard,getMatchesInfo
-url="https://www.cricbuzz.com/"
-headers = {'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246"}
-r = requests.get(url,headers=headers)
-soup = BeautifulSoup(r.content, 'html5lib')
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.common.exceptions import NoSuchElementException
+from classes.MatchCard import getUpcomingMatchesInfo,getRunningMatchesInfo,fetchSquads
 
 
+def getMatches():
+    url = "https://www.cricbuzz.com/"
+    options = Options()
+    options.headless = True
+    options.add_argument("start-maximized")
+    options.add_argument("disable-infobars")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--tz=Asia/Kolkata")
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    driver.get(url)
+    try:
+        matchCardsUl = driver.find_element(By.CLASS_NAME, 'cb-mtch-crd-rt-itm')
+        matchCardsList = matchCardsUl.find_elements(By.TAG_NAME, 'li')
+        upcomingMatchesList=getUpcomingMatchesInfo(matchCardsList,driver=driver)
+        runningMatchesList=getRunningMatchesInfo(matchCardsList,driver=driver)
+        for item in runningMatchesList:
+            matchPlayingSquads=fetchSquads(item.matchLink,driver)
+            teams=matchPlayingSquads.keys()
+            for team in teams:
+                if(team.startswith(item.team1.strip('.'))):
+                    item.team1Players=matchPlayingSquads[team]
+                if(team.startswith(item.team2.strip('.'))):
+                    item.team2Players=matchPlayingSquads[team]
 
-matchCardsUl = soup.find('ul', class_='cb-col cb-col-100 videos-carousal-wrapper cb-mtch-crd-rt-itm')
-matchCardsList = matchCardsUl.find_all('li') if matchCardsUl else []
+        print(upcomingMatchesList)
+        print("\n\n\n\n")
+        print(runningMatchesList)
+    finally:
+        driver.quit()
 
-getMatchesInfo(matchCardsList);
-
-
+getMatches()
