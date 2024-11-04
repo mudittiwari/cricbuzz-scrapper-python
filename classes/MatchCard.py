@@ -28,7 +28,7 @@ class RunningMatchCard:
         self.team2Players = team2Players
 
     def __repr__(self):
-        return (f"UpcomingMatchCard(matchLink='{self.matchLink}', "
+        return (f"RunningMatchCard(matchLink='{self.matchLink}', "
                 f"team1='{self.team1}', team2='{self.team2}', "
                 f"matchType='{self.matchType}', "
                 f"team2Players='{self.team2Players}', "
@@ -79,12 +79,51 @@ def getUpcomingMatchesInfo(matchCardsList,driver):
                 print("Could not find both teams using the 'cb-hmscg-bat-txt' class.")
     return matchesList
 
-
-
+def getLastBallAction(matchUrl, driver):
+    try:
+        driver.get(matchUrl)
+        time.sleep(3)
+        try:
+            recentScoreContainer = driver.find_element(By.CSS_SELECTOR, 'div.cb-min-rcnt')
+            recentScoreSpan = recentScoreContainer.find_elements(By.TAG_NAME, "span")[1]
+            recentScoreSpanText = driver.execute_script("return arguments[0].textContent;", recentScoreSpan).strip()
+        except Exception as e:
+            print(f"Error locating or retrieving score: {e}")
+            recentScoreSpanText = ""
+        try:
+            recentCommentaryContent = driver.find_element(By.CSS_SELECTOR, 'p.cb-com-ln')
+            recentCommentaryContentText = driver.execute_script("return arguments[0].textContent;", recentCommentaryContent).strip()
+        except Exception as e:
+            print(f"Error locating or retrieving commentary: {e}")
+            recentCommentaryContentText = ""
+        try:
+            recentCommentarySplitList = recentCommentaryContentText.split(',')
+            playersInvolvedStringList = recentCommentarySplitList[0].split('to')
+            bowler = playersInvolvedStringList[0].strip() if len(playersInvolvedStringList) > 0 else "Unknown"
+            batsman = playersInvolvedStringList[1].strip() if len(playersInvolvedStringList) > 1 else "Unknown"
+        except Exception as e:
+            print(f"Error parsing player names: {e}")
+            bowler = "Unknown"
+            batsman = "Unknown"
+        lastBallAction = {
+            "scoreDone": recentScoreSpanText.split()[-1].strip() if recentScoreSpanText else "N/A",
+            "bowler": bowler,
+            "batsman": batsman
+        }
+        print(lastBallAction)
+        
+    except Exception as e:
+        print(f"Error in getLastBallAction function: {e}")
+        lastBallAction = {
+            "scoreDone": "N/A",
+            "bowler": "Unknown",
+            "batsman": "Unknown"
+        }
+    return lastBallAction
 
 def getSquadsUrl(liveScoresUrl):
     return liveScoresUrl.replace("live-cricket-scores", "cricket-match-squads")
-
+    
 
 def fetchSquads(liveScoresUrl, driver):
     try:
@@ -120,8 +159,6 @@ def fetchSquads(liveScoresUrl, driver):
 
     except Exception as e:
         print(f"An error occurred while fetching squads: {e}")
-
-
 
 
 def getRunningMatchesInfo(matchCardsList, driver):
