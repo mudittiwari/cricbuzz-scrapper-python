@@ -1,10 +1,20 @@
-from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import NoSuchElementException
 import time
+import sys
+import io
+
+def suppress_print(func):
+    def wrapper(*args, **kwargs):
+        temp_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+        result = func(*args, **kwargs)
+        sys.stdout = temp_stdout
+        return result
+    return wrapper
+
+
+
 class UpcomingMatchCard:
     def __init__(self, matchLink, team1, team2, matchType, matchTiming):
         self.matchLink = matchLink
@@ -34,9 +44,19 @@ class RunningMatchCard:
                 f"team2Players='{self.team2Players}', "
                 f"team1Players='{self.team1Players}')")    
 
+class CompletedMatchCard:
+    def __init__(self, matchLink):
+        self.matchLink = matchLink
+
+    def __repr__(self):
+        return (f"CompletedMatchCard(match_link='{self.matchLink}')")
+
+@suppress_print
 def getUpcomingMatchesInfo(matchCardsList,driver):
     matchesList=[]
     for item in matchCardsList:
+        # print(item.get_attribute("innerHTML"))
+        # print("\n\n\n")
         try:
             matchLinkElement = item.find_element(By.TAG_NAME, 'a')
             matchLink = matchLinkElement.get_attribute('href')
@@ -51,13 +71,13 @@ def getUpcomingMatchesInfo(matchCardsList,driver):
             print("Match type element not found, skipping this match. \n\n")
             continue
         try:
-            previewElement = item.find_element(By.CLASS_NAME, 'cb-ovr-flo.cb-mtch-crd-time.cb-font-12.cb-text-preview')
+            previewElement = item.find_element(By.CSS_SELECTOR, '.cb-ovr-flo.cb-mtch-crd-time.cb-font-12.cb-text-preview')
+            # print(previewElement)
             previewText = driver.execute_script("return arguments[0].textContent;", previewElement).strip()
         except NoSuchElementException:
             print("Preview element not found, skipping this match. \n\n")
             continue
-        
-        if previewText.startswith("Today"):
+        if not previewText.startswith("Today"):
             teamElements = item.find_elements(By.CLASS_NAME, 'cb-hmscg-bat-txt')
             if len(teamElements) >= 2:
                 try:
@@ -79,6 +99,7 @@ def getUpcomingMatchesInfo(matchCardsList,driver):
                 print("Could not find both teams using the 'cb-hmscg-bat-txt' class.")
     return matchesList
 
+# @suppress_print
 def getLastBallAction(matchUrl, driver):
     try:
         driver.get(matchUrl)
@@ -105,26 +126,33 @@ def getLastBallAction(matchUrl, driver):
             print(f"Error parsing player names: {e}")
             bowler = "Unknown"
             batsman = "Unknown"
+        try:
+            recentOverContent = driver.find_element(By.CSS_SELECTOR, '.cb-mat-mnu-wrp.cb-ovr-num')
+            recentOverContentText = driver.execute_script("return arguments[0].textContent;", recentOverContent).strip()
+        except Exception as e:
+            print(f"Error locating or retrieving over: {e}")
+            recentOverContentText = ""
         lastBallAction = {
             "scoreDone": recentScoreSpanText.split()[-1].strip() if recentScoreSpanText else "N/A",
             "bowler": bowler,
-            "batsman": batsman
+            "batsman": batsman,
+            "over":recentOverContentText
         }
-        print(lastBallAction)
-        
     except Exception as e:
         print(f"Error in getLastBallAction function: {e}")
         lastBallAction = {
             "scoreDone": "N/A",
             "bowler": "Unknown",
-            "batsman": "Unknown"
+            "batsman": "Unknown",
+            "over":"Unknown"
         }
     return lastBallAction
 
+@suppress_print
 def getSquadsUrl(liveScoresUrl):
     return liveScoresUrl.replace("live-cricket-scores", "cricket-match-squads")
     
-
+@suppress_print
 def fetchSquads(liveScoresUrl, driver):
     try:
         squadsUrl = getSquadsUrl(liveScoresUrl)
@@ -160,7 +188,7 @@ def fetchSquads(liveScoresUrl, driver):
     except Exception as e:
         print(f"An error occurred while fetching squads: {e}")
 
-
+@suppress_print
 def getRunningMatchesInfo(matchCardsList, driver):
     matchesList = []
     for item in matchCardsList:
@@ -193,4 +221,74 @@ def getRunningMatchesInfo(matchCardsList, driver):
             print("Error finding teams of the match. \n\n")
             continue
 
+    return matchesList
+
+@suppress_print
+def getCompletedMatchesInfo(matchCardsList,driver):
+    matchesList=[]
+    for item in matchCardsList:
+        try:
+            matchLinkElement = item.find_element(By.TAG_NAME, 'a')
+            matchLink = matchLinkElement.get_attribute('href')
+        except NoSuchElementException:
+            print("Match link element not found, skipping this match. \n\n")
+            continue
+        try:
+            previewElement = item.find_element(By.CSS_SELECTOR, '.cb-ovr-flo.cb-mtch-crd-state.cb-font-12.cb-text-preview')
+            # print(previewElement)
+            previewText = driver.execute_script("return arguments[0].textContent;", previewElement).strip()
+        except NoSuchElementException:
+            print("Preview element not found, skipping this match. \n\n")
+            continue
+        if previewText.count("Won")>0:
+            matchCard=CompletedMatchCard(matchLink)
+            matchesList.append(matchCard)
+    return matchesList
+
+@suppress_print
+def getUpcomingMatchesTossUpdate(matchCardsList,driver):
+    matchesList=[]
+    for item in matchCardsList:
+        # print(item.get_attribute("innerHTML"))
+        # print("\n\n\n")
+        try:
+            matchLinkElement = item.find_element(By.TAG_NAME, 'a')
+            matchLink = matchLinkElement.get_attribute('href')
+        except NoSuchElementException:
+            print("Match link element not found, skipping this match. \n\n")
+            continue
+        
+        try:
+            matchTypeElement = item.find_element(By.CLASS_NAME, 'cb-card-match-format')
+            matchType=driver.execute_script("return arguments[0].textContent;", matchTypeElement).strip()
+        except NoSuchElementException:
+            print("Match type element not found, skipping this match. \n\n")
+            continue
+        try:
+            previewElement = item.find_element(By.CSS_SELECTOR, '.cb-ovr-flo.cb-mtch-crd-state.cb-font-12.cb-text-preview')
+            # print(previewElement)
+            previewText = driver.execute_script("return arguments[0].textContent;", previewElement).strip()
+        except NoSuchElementException:
+            print("Preview element not found, skipping this match. \n\n")
+            continue
+        if previewText.count("opt"):
+            teamElements = item.find_elements(By.CLASS_NAME, 'cb-hmscg-bat-txt')
+            if len(teamElements) >= 2:
+                try:
+                    spanElement1 = teamElements[0].find_element(By.TAG_NAME, 'span')
+                    spanElement2 = teamElements[1].find_element(By.TAG_NAME, 'span')
+                    team1 = driver.execute_script("return arguments[0].textContent;", spanElement1).strip()
+                    team2 = driver.execute_script("return arguments[0].textContent;", spanElement2).strip()
+                    matchCard = UpcomingMatchCard(
+                        matchLink=matchLink,
+                        team1=team1,
+                        team2=team2,
+                        matchType=matchType,
+                        matchTiming=previewText
+                    )
+                    matchesList.append(matchCard)
+                except Exception as e:
+                    print("An error occurred while fetching team names:", str(e))
+            else:
+                print("Could not find both teams using the 'cb-hmscg-bat-txt' class.")
     return matchesList

@@ -8,3 +8,5 @@ work to do now:
 a. run scored by the player(1,2,3,4,6)
 b. wicket taken by the player
 c. wicket fallen of the player
+
+2. get the list of the completed matches so that they can be removed from the database.
