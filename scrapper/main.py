@@ -1,27 +1,9 @@
-from selenium import webdriver
+from classes.MatchCard import fetchSquads, getCompletedMatchesInfo, getRunningMatchesInfo, getUpcomingMatchesInfo, getUpcomingMatchesTossUpdate
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-from classes.MatchCard import getUpcomingMatchesInfo,getRunningMatchesInfo,fetchSquads, getCompletedMatchesInfo, getUpcomingMatchesTossUpdate
-import time
+import zmq
 import json
-
-
-
-def serializeRunningMatches(runningMatches):
-    serializedMatches = []
-    for match in runningMatches:
-        serializedMatch = {
-            "matchLink": match.matchLink,
-            "team1": match.team1,
-            "team2": match.team2,
-            "matchType": match.matchType,
-            "team1Players": match.team1Players,
-            "team2Players": match.team2Players
-        }
-        serializedMatches.append(serializedMatch)
-    return serializedMatches
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 
 def getMatches():
     url = "https://www.cricbuzz.com/"
@@ -35,47 +17,55 @@ def getMatches():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--no-sandbox")
     options.add_argument("--tz=Asia/Kolkata")
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    # while True:
-    #     print(getLastBallAction("https://www.cricbuzz.com/live-cricket-scores/94404/rsa-vs-sl-1st-test-sri-lanka-tour-of-south-africa-2024",driver))
-    #     time.sleep(10)
-    driver.get(url)
+    driver = webdriver.Chrome(options=options)
+
     try:
+        driver.get(url)
         matchCardsUl = driver.find_element(By.CLASS_NAME, 'cb-mtch-crd-rt-itm')
         matchCardsList = matchCardsUl.find_elements(By.TAG_NAME, 'li')
-        upcomingMatchesList=getUpcomingMatchesInfo(matchCardsList,driver=driver)
-        runningMatchesList=getRunningMatchesInfo(matchCardsList,driver=driver)
-        completedMatchesList=getCompletedMatchesInfo(matchCardsList,driver=driver)
-        upcomingMatchesTossUpdateList=getUpcomingMatchesTossUpdate(matchCardsList,driver=driver)
-        for item in runningMatchesList:
-            matchPlayingSquads=fetchSquads(item.matchLink,driver)
-            teams=matchPlayingSquads.keys()
-            for team in teams:
-                if(team.startswith(item.team1.strip('.'))):
-                    item.team1Players=matchPlayingSquads[team]
-                if(team.startswith(item.team2.strip('.'))):
-                    item.team2Players=matchPlayingSquads[team]
+        upcomingMatchesList = getUpcomingMatchesInfo(matchCardsList, driver=driver)
+        runningMatchesList = getRunningMatchesInfo(matchCardsList, driver=driver)
+        completedMatchesList = getCompletedMatchesInfo(matchCardsList, driver=driver)
+        upcomingMatchesTossUpdateList = getUpcomingMatchesTossUpdate(matchCardsList, driver=driver)
 
-        # print(upcomingMatchesList)
-        # print("\n\n\n\n")
-        # print(completedMatchesList)
-        # print("\n\n\n\n")
-        # print(upcomingMatchesTossUpdateList)
-        # print("\n\n\n\n")
-        # for item in runningMatchesList:
-        #     print(item.matchLink)
-        #     print(getLastBallAction(item.matchLink,driver=driver))
+        for item in runningMatchesList:
+            matchPlayingSquads = fetchSquads(item.matchLink, driver)
+            teams = matchPlayingSquads.keys()
+            for team in teams:
+                if team.startswith(item.team1.strip('.')):
+                    item.team1Players = matchPlayingSquads[team]
+                if team.startswith(item.team2.strip('.')):
+                    item.team2Players = matchPlayingSquads[team]
+
         matches_data = {
             "upcomingMatches": upcomingMatchesList,
             "runningMatches": runningMatchesList,
             "completedMatches": completedMatchesList,
             "upcomingMatchesTossUpdate": upcomingMatchesTossUpdateList
         }
-        print(json.dumps(matches_data, default=lambda o: o.__dict__, indent=4))
+        return json.dumps(matches_data, default=lambda o: o.__dict__, indent=4)
     finally:
         driver.quit()
 
-getMatches()
 
+def zmqServer():
+    context = zmq.Context()
+    socket = context.socket(zmq.REP)
+    socket.bind("tcp://*:5556")
+    print("ZMQ Server is running...")
+    while True:
+        try:
+            message = socket.recv_json()
+            task = message.get("task")
+            if task == "getMatches":
+                print("Received task: getMatches")
+                response = getMatches()
+                socket.send_json({"status": "success", "data": json.loads(response)})
+            else:
+                socket.send_json({"status": "error", "message": "Invalid task"})
+        except Exception as e:
+            print(f"Error: {e}")
+            socket.send_json({"status": "error", "message": str(e)})
 
-
+if __name__ == "__main__":
+    zmqServer()

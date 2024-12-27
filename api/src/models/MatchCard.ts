@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
+import { MatchCommentary } from "../background/services";
 
 export interface IMatchCard extends Document {
     matchLink: string;
@@ -7,13 +8,12 @@ export interface IMatchCard extends Document {
     team1Players: string[];
     team2Players: string[];
     subscribersList: string[];
-    status: "upcoming" | "live" | "completed";
-    matchCommentary: string[];
+    status: "upcoming" | "running" | "completed";
+    playersSubscribed: Map<string, string[]>;
     matchTiming: string;
     createdAt: Date;
     updatedAt: Date;
 }
-
 const matchCardSchema: Schema<IMatchCard> = new Schema(
     {
         matchLink: { type: String, required: true, unique: true },
@@ -23,12 +23,12 @@ const matchCardSchema: Schema<IMatchCard> = new Schema(
         team1Players: { type: [String], default:[] },
         team2Players: { type: [String], default:[] },
         subscribersList: { type: [String], default: [] },
+        playersSubscribed: { type: Map, of: [String], default: () => new Map()  },
         status: {
             type: String,
             required: true,
-            enum: ["upcoming", "live", "completed"],
+            enum: ["upcoming", "running", "completed"],
         },
-        matchCommentary: { type: [String], default: [] },
     },
     {
         timestamps: true,

@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
-import { addUpcomingMatch } from '../controllers/matchesController';
-
+import { addUpcomingMatch, handleRunningMatches } from '../controllers/matchesController';
+import { Request } from "zeromq";
+import { json } from 'stream/consumers';
 export interface RunningMatch {
     matchLink: string;
     team1: string;
@@ -10,7 +11,7 @@ export interface RunningMatch {
     team2Players: string[];
 }
 
-export interface UpcomingMatch{
+export interface UpcomingMatch {
     matchLink: string;
     team1: string;
     team2: string;
@@ -18,65 +19,79 @@ export interface UpcomingMatch{
     matchTiming: string;
 }
 
+export interface MatchCommentary {
+    scoreDone: string;
+    bowler: string;
+    batsman: string;
+    over: string;
+}
+
 
 export function executePythonScript(): void {
-    const pythonProcess = spawn('python3', ['../scrapper/main.py']);
-    pythonProcess.stdout.on('data', (data: Buffer) => {
-        const textData = data.toString('utf-8');
+    const socket = new Request();
+
+    (async () => {
         try {
-            const jsonResponse = JSON.parse(textData);
-            // console.log("Received JSON from Python:", jsonResponse);
-            // if(jsonResponse.runningMatches){
-            //     parseRunningMatches(jsonResponse.runningMatches);
-            // }
-            if(jsonResponse.upcomingMatches){
-                parseUpcomingMatches(jsonResponse.upcomingMatches)
+            socket.connect("tcp://localhost:5556");
+            const message = { task: "getMatches" };
+            await socket.send(JSON.stringify(message));
+            const [response] = await socket.receive();
+            const jsonResponse = JSON.parse(response.toString());
+            if (jsonResponse.status === "success" && jsonResponse.data) {
+                if (jsonResponse.data.runningMatches) {
+                    parseRunningMatches(jsonResponse.data.runningMatches);
+                }
+                if (jsonResponse.data.upcomingMatches) {
+                    parseUpcomingMatches(jsonResponse.data.upcomingMatches);
+                }
+            } else {
+                console.error("Error in Python response:", jsonResponse.message || "Unknown error");
             }
         } catch (error) {
-            console.error("Error parsing JSON:", (error as Error).message);
+            console.error("Error communicating with Python service:", error);
+        } finally {
+            socket.close();
         }
-    });
-
-    pythonProcess.stderr.on('data', (data: Buffer) => {
-        console.error("Python Error:", data.toString('utf-8'));
-    });
-    pythonProcess.on('close', (code: number) => {
-        console.log(`Python process exited with code ${code}`);
-    });
+    })();
 }
 
-export function executeBallActionScript(matchLink:string): void {
-    // Pass the argument to the Python script
-    const pythonProcess = spawn('python3', ['../scrapper/ballAction.py', matchLink]);
-    pythonProcess.stdout.on('data', (data: Buffer) => {
-        const textData = data.toString('utf-8');
+export function executeBallActionScript(matchLink: string, lastOverBall: string): Promise<MatchCommentary | null> {
+    return new Promise(async (resolve) => {
+        const socket = new Request();
         try {
-            const jsonResponse = JSON.parse(textData);
-            console.log(jsonResponse);
+            socket.connect("tcp://localhost:5555");
+            const message = JSON.stringify({ task: "getLastBallAction", matchLink, lastOverBall });
+            await socket.send(message);
+            const [response] = await socket.receive();
+            try {
+                const rawString = response.toString();
+                const cleanedString = JSON.parse(rawString);
+                const jsonResponse = JSON.parse(cleanedString);
+                resolve(jsonResponse);
+            } catch (error) {
+                console.error("Error parsing JSON response:", (error as Error).message);
+                resolve(null);
+            }
         } catch (error) {
-            console.error("Error parsing JSON:", (error as Error).message);
+            console.error("ZeroMQ communication error:", (error as Error).message);
+            resolve(null);
+        } finally {
+            socket.close();
         }
-    });
-
-    pythonProcess.stderr.on('data', (data: Buffer) => {
-        console.error("Python Error:", data.toString('utf-8'));
-    });
-
-    pythonProcess.on('close', (code: number) => {
-        console.log(`Python process exited with code ${code}`);
     });
 }
 
 
 
-function parseUpcomingMatches(upcomingMatchesArray: UpcomingMatch[]){
-    upcomingMatchesArray.forEach((match)=>{
+
+function parseUpcomingMatches(upcomingMatchesArray: UpcomingMatch[]) {
+    upcomingMatchesArray.forEach((match) => {
         addUpcomingMatch(match);
     });
 }
 
 function parseRunningMatches(runningMatchesArray: RunningMatch[]): void {
     runningMatchesArray.forEach((match) => {
-        console.log(match.matchLink, match.team1, match.team2, match.team1Players, match.team2Players);
+        handleRunningMatches(match);
     });
 }

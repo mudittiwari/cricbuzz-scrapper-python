@@ -4,9 +4,8 @@ work done till now:
 3. get the players list of the running matches.
 
 work to do now:
-1. get the scorecard of the current match in the form like
-a. run scored by the player(1,2,3,4,6)
-b. wicket taken by the player
-c. wicket fallen of the player
-
-2. get the list of the completed matches so that they can be removed from the database.
+1. change schema of matches...in the subscription list of players score will also be added along with the name of t he users.
+2. write code for sending notification to the subscribed users when a player has something done according to their preferences.
+3. start creating mobile application.
+4. manage socket connections in the mobile application and node service for sending push notifications.
+5. write code for removing the completed matches from the database.

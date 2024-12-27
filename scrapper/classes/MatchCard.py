@@ -77,7 +77,7 @@ def getUpcomingMatchesInfo(matchCardsList,driver):
         except NoSuchElementException:
             print("Preview element not found, skipping this match. \n\n")
             continue
-        if not previewText.startswith("Today"):
+        if previewText.startswith("Today"):
             teamElements = item.find_elements(By.CLASS_NAME, 'cb-hmscg-bat-txt')
             if len(teamElements) >= 2:
                 try:
@@ -99,54 +99,116 @@ def getUpcomingMatchesInfo(matchCardsList,driver):
                 print("Could not find both teams using the 'cb-hmscg-bat-txt' class.")
     return matchesList
 
+
+def getNextOver(currentOver: str) -> str:
+    over, ball = map(int, currentOver.split('.'))
+    ball += 1
+    if ball > 6:
+        ball = 1
+        over += 1
+    return f"{over}.{ball}"
+
+
 # @suppress_print
-def getLastBallAction(matchUrl, driver):
+def getLastBallAction(matchUrl, currentOver, driver):
+    nextOverFound=False
+    time.sleep(3)
     try:
         driver.get(matchUrl)
-        time.sleep(3)
+        lastBallAction = {
+            "scoreDone": "N/A",
+            "bowler": "Unknown",
+            "batsman": "Unknown",
+            "over": "Unknown"
+        }
         try:
-            recentScoreContainer = driver.find_element(By.CSS_SELECTOR, 'div.cb-min-rcnt')
-            recentScoreSpan = recentScoreContainer.find_elements(By.TAG_NAME, "span")[1]
-            recentScoreSpanText = driver.execute_script("return arguments[0].textContent;", recentScoreSpan).strip()
+            xpathExpression = f"//div[contains(@class, 'cb-mat-mnu-wrp') and text()='{currentOver}']"
+            xPathNextOverExpression = f"//div[contains(@class, 'cb-mat-mnu-wrp') and text()='{getNextOver(currentOver)}']"
+            recentOverContent = driver.find_element(By.XPATH, xpathExpression)
+            recentOverParent = recentOverContent.find_element(By.XPATH, "./..").find_element(By.XPATH, "./..")
+            try:
+                precedingSiblingRecentOverContent = driver.find_element(By.XPATH, xPathNextOverExpression)
+                commentarySource = precedingSiblingRecentOverContent.find_element(By.XPATH, "./..").find_element(By.XPATH, "./..")
+                nextOverFound=True
+            except Exception as e:
+                commentarySource = recentOverParent
+            precedingSiblings = commentarySource.find_elements(By.XPATH, "./preceding-sibling::*")
+            filteredSiblings = []
+            for sibling in precedingSiblings:
+                try:
+                    recentOverContentFromSource = sibling.find_element(By.CSS_SELECTOR, '.cb-mat-mnu-wrp.cb-ovr-num')
+                    filteredSiblings.append(sibling)
+                except:
+                    continue
+            numberOfPrecedingSiblings = len(filteredSiblings)
+            if not nextOverFound:
+                siblingToSearch=filteredSiblings[-1]
+                recentOverContentFromSource = siblingToSearch.find_element(By.CSS_SELECTOR, '.cb-mat-mnu-wrp.cb-ovr-num')
+                recentOverContentText = driver.execute_script("return arguments[0].textContent;", recentOverContentFromSource).strip()
+                if recentOverContent == "0.1":
+                    commentarySource=siblingToSearch
+            try:
+                recentOverContentFromSource = commentarySource.find_element(By.CSS_SELECTOR, '.cb-mat-mnu-wrp.cb-ovr-num')
+                recentOverContentText = driver.execute_script("return arguments[0].textContent;", recentOverContentFromSource).strip()
+            except Exception as e:
+                recentOverContentText = ""
+            try:
+                recentCommentaryContent = commentarySource.find_element(By.CSS_SELECTOR, 'p.cb-com-ln')
+                recentCommentaryContentText = driver.execute_script("return arguments[0].textContent;", recentCommentaryContent).strip()
+            except Exception as e:
+                recentCommentaryContentText = ""
+        
         except Exception as e:
-            print(f"Error locating or retrieving score: {e}")
-            recentScoreSpanText = ""
-        try:
+            recentOverContentFromSource = driver.find_element(By.CSS_SELECTOR, '.cb-mat-mnu-wrp.cb-ovr-num')
+            recentOverContentText = driver.execute_script("return arguments[0].textContent;", recentOverContentFromSource).strip()
             recentCommentaryContent = driver.find_element(By.CSS_SELECTOR, 'p.cb-com-ln')
             recentCommentaryContentText = driver.execute_script("return arguments[0].textContent;", recentCommentaryContent).strip()
-        except Exception as e:
-            print(f"Error locating or retrieving commentary: {e}")
-            recentCommentaryContentText = ""
         try:
             recentCommentarySplitList = recentCommentaryContentText.split(',')
             playersInvolvedStringList = recentCommentarySplitList[0].split('to')
             bowler = playersInvolvedStringList[0].strip() if len(playersInvolvedStringList) > 0 else "Unknown"
             batsman = playersInvolvedStringList[1].strip() if len(playersInvolvedStringList) > 1 else "Unknown"
         except Exception as e:
-            print(f"Error parsing player names: {e}")
             bowler = "Unknown"
             batsman = "Unknown"
         try:
-            recentOverContent = driver.find_element(By.CSS_SELECTOR, '.cb-mat-mnu-wrp.cb-ovr-num')
-            recentOverContentText = driver.execute_script("return arguments[0].textContent;", recentOverContent).strip()
+            recentScoreContainer = driver.find_element(By.CSS_SELECTOR, 'div.cb-min-rcnt')
+            recentScoreSpan = recentScoreContainer.find_elements(By.TAG_NAME, "span")[1]
+            recentScoreSpanText = driver.execute_script("return arguments[0].textContent;", recentScoreSpan).strip()
+            file_path = "match_data.txt"
+            with open(file_path, "a") as file:
+                file.write(recentScoreSpanText)
+            cleanedList = [element.strip('|') for item in recentScoreSpanText.split() for element in item.split() if element.strip('|')]
         except Exception as e:
-            print(f"Error locating or retrieving over: {e}")
-            recentOverContentText = ""
-        lastBallAction = {
-            "scoreDone": recentScoreSpanText.split()[-1].strip() if recentScoreSpanText else "N/A",
-            "bowler": bowler,
-            "batsman": batsman,
-            "over":recentOverContentText
-        }
+            recentScoreSpanText = ""
+        if 'numberOfPrecedingSiblings' in locals():
+            lastBallAction = {
+                "scoreDone": cleanedList[-(numberOfPrecedingSiblings+1)].strip() if recentScoreSpanText else "N/A",
+                "bowler": bowler,
+                "batsman": batsman,
+                "over": recentOverContentText
+            }
+        else:
+            lastBallAction = {
+                "scoreDone": cleanedList[-1].strip() if recentScoreSpanText else "N/A",
+                "bowler": bowler,
+                "batsman": batsman,
+                "over": recentOverContentText
+            }
     except Exception as e:
-        print(f"Error in getLastBallAction function: {e}")
         lastBallAction = {
             "scoreDone": "N/A",
             "bowler": "Unknown",
             "batsman": "Unknown",
-            "over":"Unknown"
+            "over": "Unknown"
         }
+
     return lastBallAction
+
+
+
+
+
 
 @suppress_print
 def getSquadsUrl(liveScoresUrl):
